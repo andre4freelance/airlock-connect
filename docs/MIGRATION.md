@@ -1,82 +1,74 @@
-# Multi-Device Keypair & Vault Migration
+# Multi-device keypair and vault migration
 
-Because `airlock-connect` relies on standard UNIX `pass` backed by GPG, moving your encrypted inventory to a new laptop or workstation is completely portable.
+Moving an encrypted inventory to a secondary machine involves transferring your GPG keypair and the `~/.password-store` directory.
 
----
+## Keypair vs password store
 
-## The Static Key vs Dynamic Vault Concept
+- GPG private key (`.asc`): Export this once. It acts as the master key to decrypt all entries.
+- Password store (`~/.password-store/`): Contains the encrypted `.gpg` files. Copy or sync this whenever you add or modify entries.
 
-- **GPG Private Key (`.asc`)**: **Static**. You only need to export this **once**. It acts as the master key and will decrypt all current and future devices.
-- **Password Store (`~/.password-store/`)**: **Dynamic**. Contains your `.gpg` encrypted files. Sync or copy this whenever new devices are added.
+## Migration procedure
 
----
-
-## Migration Steps
-
-### Phase 1: On Your Source Workstation (Export)
+### 1. Export from source machine
 
 ```bash
 mkdir -p ~/airlock-migration && cd ~/airlock-migration
 
-# 1. Export GPG secret key, public key, and ownertrust
+# Export GPG keys and trust database
 GPG_ID=$(cat ~/.password-store/.gpg-id | head -n 1)
 gpg --armor --export-secret-keys "$GPG_ID" > gpg-secret-key.asc
 gpg --armor --export "$GPG_ID" > gpg-public-key.asc
 gpg --export-ownertrust > gpg-ownertrust.txt
 
-# 2. Archive the encrypted password store
+# Archive password store
 tar -czvf password-store.tar.gz -C ~ .password-store
 
-# 3. Create a single migration bundle
+# Bundle files for transfer
 cd ~
 tar -czvf airlock-migration-bundle.tar.gz -C ~/airlock-migration .
 rm -rf ~/airlock-migration
 ```
 
-Transfer `airlock-migration-bundle.tar.gz` securely to your destination machine (via SCP, encrypted drive, or direct local network transfer).
+Transfer `airlock-migration-bundle.tar.gz` to your target machine using SCP, rsync, or a secure USB drive.
 
----
-
-### Phase 2: On Your Target Workstation (Restore)
+### 2. Restore on target machine
 
 ```bash
-# 1. Install prerequisites
+# Install system packages
 sudo apt update && sudo apt install -y pass expect sshpass gpg git
 
-# 2. Extract migration bundle
+# Extract bundle
 mkdir -p ~/airlock-restore
 tar -xzvf airlock-migration-bundle.tar.gz -C ~/airlock-restore
 cd ~/airlock-restore
 
-# 3. Import GPG keyring
+# Import GPG keyring
 gpg --import gpg-public-key.asc
 gpg --import gpg-secret-key.asc
 gpg --import-ownertrust gpg-ownertrust.txt
 
-# 4. Restore the password store directory
+# Restore password store directory
 tar -xzvf password-store.tar.gz -C ~
 
-# 5. Install airlock-connect via curl one-liner
+# Install airlock-connect
 curl -fsSL https://raw.githubusercontent.com/andre4freelance/airlock-connect/main/install.sh | bash -s -- --with-gate
 
-# 6. Cleanup sensitive restore files
+# Clean up temporary archive files
 cd ~
 rm -rf ~/airlock-restore airlock-migration-bundle.tar.gz
 ```
 
----
+### 3. Verify
 
-## Verification
-
-Test the restored configuration:
+Confirm the setup functions on the target machine:
 
 ```bash
-# 1. Verify entries are visible
+# List vault entries
 pass ls
 
-# 2. Test strict sudo verification on plaintext view
+# Test sudo verification on plaintext display
 pass show <your-entry>
 
-# 3. Test automated connection
+# Test automated connection
 connect <your-entry>
 ```

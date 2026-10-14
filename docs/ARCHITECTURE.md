@@ -1,57 +1,52 @@
-# Architecture & Security Model
+# Architecture and security model
 
-`airlock-connect` bridges the gap between secure encrypted credential storage (standard UNIX `pass` + GPG) and legacy network infrastructure (switches, routers, firewalls, and PDUs) that strictly mandate password authentication.
+`airlock-connect` connects standard UNIX `pass` and GPG with network devices that require password authentication instead of SSH public keys.
 
----
+## In-memory execution pipeline
 
-## 1. Zero-Leak Memory Pipeline
+Storing passwords in plaintext files risks unauthorized access, while passing them via CLI arguments (`-p <password>`) exposes them to `/proc` and `ps`.
 
-Traditional approaches store passwords in plain text files or pass them inline via process arguments (`-p <password>`), leaking secrets to `/proc` and `ps aux`.
-
-`airlock-connect` eliminates disk and process table leaks:
+`airlock-connect` handles authentication entirely in memory:
 
 ```
 [ ~/.password-store/*.gpg ]
-    │
-    │  1. In-Memory Decryption via pass show
-    ▼
-[ Decrypted Secret in RAM ]
-    │
-    ├─────────────────────────────────────────┐
-    │ Protocol: SSH                           │ Protocol: Telnet
-    ▼                                         ▼
-[ Process Substitution 3<<< "$PASS" ]     [ expect dynamic spawn ]
-    │                                         │
-    │ 2. Dedicated FD 3                       │ 2. Automated Handshake
-    ▼                                         ▼
+    |
+    |  1. Decrypt into memory via pass show
+    v
+[ Secret in memory ]
+    |
+    +-----------------------------------------+
+    | Protocol: SSH                           | Protocol: Telnet
+    v                                         v
+[ Process substitution 3<<< "$PASS" ]     [ expect dynamic spawn ]
+    |                                         |
+    | 2. Dedicated FD 3                       | 2. Automated handshake
+    v                                         v
 [ sshpass -d 3 ssh ... ]                  [ send "$user\r" / "$pass\r" ]
-    │                                         │
-    │ 3. Stdin (FD 0) untouched               │ 3. interact handoff
-    ▼                                         ▼
-[ Fully Interactive Remote Shell ]        [ Fully Interactive Remote Shell ]
+    |                                         |
+    | 3. Stdin (FD 0) untouched               | 3. interact handoff
+    v                                         v
+[ Interactive remote shell ]              [ Interactive remote shell ]
 ```
 
-### Why File Descriptor 3 (`-d 3`)?
-- Standard piping (`cat secret | sshpass ssh ...`) binds secret input to Standard Input (FD 0).
-- When FD 0 is consumed by a pipe, OpenSSH cannot allocate an interactive controlling terminal (TTY), causing the session to terminate or freeze.
-- By streaming the password through inherited **File Descriptor 3** (`-d 3`), FD 0 remains 100% attached to the user's terminal keyboard, guaranteeing seamless interactive access.
+### File descriptor 3 (`-d 3`)
 
----
+Piping standard output (`cat secret | sshpass ssh ...`) ties the secret to standard input (FD 0). When FD 0 is consumed by a pipe, OpenSSH cannot allocate an interactive controlling terminal (TTY), which freezes or terminates the session.
 
-## 2. Two-Tier Protection Boundary
+Passing the password through inherited file descriptor 3 (`-d 3`) leaves FD 0 connected to your terminal keyboard, allowing a normal interactive shell session.
 
-`airlock-connect` establishes two distinct access tiers:
+## Two-tier access model
 
-| Tier | Interface | Security Policy | User Experience |
+`airlock-connect` separates secret inspection from session execution:
+
+| Operation | Command | Security rule | Behavior |
 | :--- | :--- | :--- | :--- |
-| **Inspection Tier** | `pass show`, `pass edit`, `pass grep`, `pass -c` | **Strict Sudo Gate** | Requires local machine `sudo` password. Cache is flushed immediately (`sudo -k`) to prevent lingering exposure. |
-| **Execution Tier** | `airlock-connect <entry>` (or `connect`) | **Unattended RAM Stream** | Passes internal bypass token (`_PASS_INTERNAL_BYPASS=1`). Directly decrypts in RAM and establishes connection without interrupting automated scripts or AI assistants. |
+| Secret inspection | `pass show`, `pass edit`, `pass grep`, `pass -c` | Strict sudo gate | Requires local sudo password. Sudo cache is cleared immediately (`sudo -k`) after display. |
+| Session launch | `airlock-connect <entry>` (or `connect`) | Internal bypass | Sets `_PASS_INTERNAL_BYPASS=1` to decrypt in memory and connect directly without human prompt. |
 
----
+## Metadata format
 
-## 3. Metadata Structure
-
-Entries inside `pass` are structured with the password on the first line, followed by optional YAML-like metadata:
+Entries in `pass` store the raw password on the first line, followed by optional metadata in key-value format:
 
 ```text
 SuperSecretDevicePassword123
@@ -61,6 +56,6 @@ proto: ssh
 port: 22
 ```
 
-- **Line 1**: The raw secret.
-- **Lines 2+**: Key-value pairs (`user`, `host`, `proto`, `port`).
-- **Parsing Safety**: The parser operates case-insensitively, handles whitespace variations, and guards against script termination under strict shell error traps (`set -eo pipefail`).
+- Line 1: Raw password.
+- Lines 2+: Metadata fields (`user`, `host`, `proto`, `port`).
+- Parser rules: Key lookups are case-insensitive and tolerate missing fields without triggering shell error traps.

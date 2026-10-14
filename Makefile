@@ -13,6 +13,6 @@ uninstall:
 
 test:
 	@shellcheck bin/* install.sh uninstall.sh 2>/dev/null || bash -n bin/* install.sh uninstall.sh
-	@echo "[✓] Shell syntax verification passed"
+	@echo "Shell syntax check passed."
 
 .PHONY: all install uninstall test

@@ -25,4 +25,4 @@ if [[ -L "${INSTALL_DIR}/pass" ]]; then
 fi
 rm -f "${INSTALL_DIR}/airlock-gate"
 
-echo "[✓] airlock-connect has been cleanly uninstalled."
+echo "airlock-connect has been uninstalled."

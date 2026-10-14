@@ -16,9 +16,7 @@ INSTALL_DIR="${HOME}/.local/bin"
 ZSH_COMP_DIR="${HOME}/.zfunc"
 BASH_COMP_DIR="${HOME}/.local/share/bash-completion/completions"
 
-echo "============================================="
-echo " Installing airlock-connect                  "
-echo "============================================="
+echo "Installing airlock-connect..."
 
 # Ensure target directories exist
 mkdir -p "$INSTALL_DIR"
@@ -59,14 +57,13 @@ cp "${SOURCE_DIR}/bin/airlock-connect" "${INSTALL_DIR}/airlock-connect"
 chmod +x "${INSTALL_DIR}/airlock-connect"
 ln -sf "${INSTALL_DIR}/airlock-connect" "${INSTALL_DIR}/connect"
 
-echo "[✓] Installed: ${INSTALL_DIR}/airlock-connect"
-echo "[✓] Created alias: ${INSTALL_DIR}/connect"
+echo "Installed: ${INSTALL_DIR}/airlock-connect (alias: connect)"
 
 # 2. Install shell completions
 cp "${SOURCE_DIR}/completions/_airlock-connect" "${ZSH_COMP_DIR}/_airlock-connect"
 cp "${SOURCE_DIR}/completions/airlock-connect.bash" "${BASH_COMP_DIR}/airlock-connect"
 
-echo "[✓] Installed shell completions (Zsh & Bash)"
+echo "Installed shell completions (Zsh & Bash)"
 
 # 3. Optional: Install airlock-gate (strict sudo wrapper for pass)
 ENABLE_GATE=false
@@ -81,7 +78,7 @@ if [[ "$ENABLE_GATE" == false ]]; then
     # Prompt user if running with interactive TTY available (even through curl | bash)
     if [ -r /dev/tty ] && [ -w /dev/tty ]; then
         echo
-        read -rp "Do you want to enable 'airlock-gate' (strict sudo check for 'pass show')? [y/N]: " choice </dev/tty >/dev/tty 2>&1 || true
+        read -rp "Enable airlock-gate (strict sudo check for 'pass show')? [y/N]: " choice </dev/tty >/dev/tty 2>&1 || true
         case "$choice" in
             [yY][eE][sS]|[yY])
                 ENABLE_GATE=true
@@ -97,13 +94,11 @@ if [[ "$ENABLE_GATE" == true ]]; then
     cp "${SOURCE_DIR}/bin/airlock-gate" "${INSTALL_DIR}/airlock-gate"
     chmod +x "${INSTALL_DIR}/airlock-gate"
     ln -sf "${INSTALL_DIR}/airlock-gate" "${INSTALL_DIR}/pass"
-    echo "[✓] Enabled airlock-gate as '${INSTALL_DIR}/pass' (strict sudo verification active)"
+    echo "Enabled airlock-gate as '${INSTALL_DIR}/pass' (strict sudo verification active)"
 fi
 
 echo
-echo "============================================="
-echo " Installation Complete!                      "
-echo "============================================="
+echo "Installation complete."
 echo "Ensure ${INSTALL_DIR} is in your PATH. If not already added:"
 echo '  export PATH="$HOME/.local/bin:$PATH"'
 echo
@@ -111,6 +106,6 @@ echo "For Zsh completion, ensure ~/.zfunc is loaded in ~/.zshrc:"
 echo '  fpath=(~/.zfunc $fpath)'
 echo '  autoload -Uz compinit && compinit'
 echo
-echo "Try running:"
+echo "Usage:"
 echo "  airlock-connect --help"
 echo "  connect --help"
