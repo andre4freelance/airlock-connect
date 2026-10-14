@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# airlock-connect — Zero-leak, unattended SSH & Telnet launcher backed by pass
+# https://github.com/andre4freelance/airlock-connect
+# ==============================================================================
+
+set -o pipefail
+
+VERSION="0.1.0"
+PREFIX="${PASSWORD_STORE_DIR:-$HOME/.password-store}"
+
+# Ensure GPG pinentry attaches to active controlling terminal if present
+if [ -t 0 ]; then
+    export GPG_TTY=$(tty 2>/dev/null || true)
+fi
+
+show_version() {
+    echo "airlock-connect version $VERSION"
+    exit 0
+}
+
+show_help() {
+    cat << 'EOF'
+airlock-connect — Zero-leak SSH & Telnet launcher backed by standard UNIX pass.
+
+Usage:
+  airlock-connect <entry-path> [remote-command / extra-ssh-args...]
+  airlock-connect [options]
+
+Options:
+  -h, --help       Show this help message and exit
+  -v, --version    Show version information and exit
+  -l, --list       List all saved entries in password store
+
+Examples:
+  airlock-connect network/core-sw01
+  airlock-connect network/azure-chr-peering "/system/resource/print"
+  airlock-connect servers/bastion-01 -p 2222
+  airlock-connect lab/cisco-r1
+
+Entry format in 'pass':
+  Line 1: Password
+  Line 2+: metadata (optional) in key: value format
+    user: <username>
+    host: <ip-or-hostname>
+    proto: <ssh|telnet>   (default: ssh)
+    port: <port>          (optional)
+
+Entry management via 'pass':
+  pass insert network/core-sw01 -m   # Save password + metadata
+  pass show network/core-sw01        # View entry content
+  pass edit network/core-sw01        # Edit password or metadata
+  pass rm network/core-sw01          # Delete entry
+  pass ls                           # List all entries
+EOF
+    exit 0
+}
+
+# Check prerequisite binaries
+check_dependencies() {
+    local missing=()
+    command -v pass >/dev/null 2>&1 || missing+=("pass")
+    command -v gpg >/dev/null 2>&1 || missing+=("gpg")
+    command -v sshpass >/dev/null 2>&1 || missing+=("sshpass")
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo "[-] Error: Missing required dependencies: ${missing[*]}" >&2
+        echo "    Install them on Ubuntu/Debian: sudo apt install -y ${missing[*]}" >&2
+        echo "    Install them on Fedora/RHEL:   sudo dnf install -y ${missing[*]}" >&2
+        echo "    Install them on Arch Linux:    sudo pacman -S ${missing[*]}" >&2
+        exit 1
+    fi
+}
+
+# Interactive selection if no argument is provided
+select_entry() {
+    if [[ ! -d "$PREFIX" ]]; then
+        echo "[-] Password store directory not found at $PREFIX." >&2
+        echo "    Initialize pass first using: pass init <gpg-id>" >&2
+        exit 1
+    fi
+
+    local entries=()
+    while IFS= read -r file; do
+        rel="${file#$PREFIX/}"
+        rel="${rel%.gpg}"
+        entries+=("$rel")
+    done < <(find "$PREFIX" -type f -name "*.gpg" ! -path "*/.*" 2>/dev/null | sort)
+
+    if [[ ${#entries[@]} -eq 0 ]]; then
+        echo "[-] No entries found in $PREFIX." >&2
+        echo "    Add your first entry using: pass insert <category/name> -m" >&2
+        exit 1
+    fi
+
+    # Use fzf if available for interactive fuzzy search
+    if command -v fzf >/dev/null 2>&1 && [ -t 0 ]; then
+        printf '%s\n' "${entries[@]}" | fzf --prompt="Select entry to connect > " --height=40% --reverse
+    else
+        echo "[*] Available entries in vault:"
+        pass ls || true
+        echo
+        show_help
+    fi
+}
+
+ENTRY="$1"
+
+case "$ENTRY" in
+    -h|--help)
+        show_help
+        ;;
+    -v|--version)
+        show_version
+        ;;
+    -l|--list|ls|list)
+        pass ls
+        exit 0
+        ;;
+    "")
+        ENTRY=$(select_entry)
+        if [[ -z "$ENTRY" ]]; then
+            exit 0
+        fi
+        ;;
+    *)
+        shift 1 || true
+        ;;
+esac
+
+check_dependencies
+
+# 1. Read entire payload from pass (bypass sudo gate wrapper if present)
+if ! RAW_CONTENT=$(_PASS_INTERNAL_BYPASS=1 pass show "$ENTRY" 2>&1); then
+    echo "[-] Failed to read or decrypt entry '$ENTRY'." >&2
+    echo "$RAW_CONTENT" >&2
+    exit 1
+fi
+
+# Line 1 is always the password
+PASSWORD=$(echo "$RAW_CONTENT" | head -n 1)
+
+# Helper to parse metadata from subsequent lines (case-insensitive key & safe from grep exit code)
+get_meta() {
+    local key="$1"
+    local line
+    line=$(echo "$RAW_CONTENT" | tail -n +2 | grep -i "^[[:space:]]*${key}[[:space:]]*:" | head -n 1 || true)
+    if [[ -n "$line" ]]; then
+        echo "$line" | sed -E "s/^[[:space:]]*${key}[[:space:]]*:[[:space:]]*//I" | tr -d '\r'
+    fi
+}
+
+USER=$(get_meta "user")
+HOST=$(get_meta "host")
+PROTO=$(get_meta "proto")
+[ -z "$PROTO" ] && PROTO=$(get_meta "porto")  # tolerance for typo porto:
+PORT=$(get_meta "port")
+
+# Fallback default protocol
+PROTO=${PROTO:-ssh}
+PROTO=$(echo "$PROTO" | tr '[:upper:]' '[:lower:]')
+
+# Fallback host if not specified in metadata
+if [[ -z "$HOST" ]]; then
+    HOST=$(basename "$ENTRY")
+fi
+
+echo "[*] Connecting to $HOST (port ${PORT:-default}) via $PROTO as '${USER:-default}'..."
+
+# 2. Execute connection based on protocol
+if [[ "$PROTO" == "ssh" ]]; then
+    SSH_ARGS=("-o" "StrictHostKeyChecking=accept-new")
+    if [[ -n "$PORT" ]]; then
+        SSH_ARGS+=("-p" "$PORT")
+    fi
+
+    TARGET="$HOST"
+    if [[ -n "$USER" ]]; then
+        TARGET="${USER}@${HOST}"
+    fi
+
+    # Pass secret via dedicated file descriptor 3 in RAM to preserve stdin for interactive TTY
+    exec sshpass -d 3 ssh "${SSH_ARGS[@]}" "$TARGET" "$@" 3<<< "$PASSWORD"
+
+elif [[ "$PROTO" == "telnet" ]]; then
+    if ! command -v expect >/dev/null 2>&1; then
+        echo "[-] Error: 'expect' is required for Telnet automated authentication." >&2
+        echo "    Install it via: sudo apt install -y expect (or distribution package manager)" >&2
+        exit 1
+    fi
+
+    TELNET_ARGS=("$HOST")
+    if [[ -n "$PORT" ]]; then
+        TELNET_ARGS+=("$PORT")
+    fi
+
+    # Interactive automation via expect
+    exec expect -c "
+        set timeout 20
+        set host \"$HOST\"
+        set user \"$USER\"
+        set pass \"$PASSWORD\"
+
+        spawn telnet ${TELNET_ARGS[*]}
+
+        expect {
+            timeout { puts \"\n[-] Error: Connection timed out\"; exit 1 }
+            eof     { puts \"\n[-] Error: Connection closed by remote host\"; exit 1 }
+            -nocase \"username:\" { send \"\$user\r\"; exp_continue }
+            -nocase \"login:\"    { send \"\$user\r\"; exp_continue }
+            -nocase \"password:\" { send \"\$pass\r\" }
+        }
+
+        # Hand over control to interactive user
+        interact
+    "
+else
+    echo "[-] Error: Protocol '$PROTO' is not supported. Use 'ssh' or 'telnet'." >&2
+    exit 1
+fi

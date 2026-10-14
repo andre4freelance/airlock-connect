@@ -1,0 +1,20 @@
+#compdef airlock-connect connect
+
+_airlock_connect() {
+    local -a entries
+    local prefix="${PASSWORD_STORE_DIR:-$HOME/.password-store}"
+
+    if [[ -d "$prefix" ]]; then
+        entries=(${${(f)"$(find "$prefix" -type f -name '*.gpg' ! -path '*/.*' 2>/dev/null)"}#$prefix/})
+        entries=(${entries%.gpg})
+    fi
+
+    _arguments -C \
+        '(-h --help)'{-h,--help}'[Show help message]' \
+        '(-v --version)'{-v,--version}'[Show version]' \
+        '(-l --list)'{-l,--list}'[List all vault entries]' \
+        '1:vault entry:compadd -a entries' \
+        '*::extra arguments:_default'
+}
+
+_airlock_connect "$@"

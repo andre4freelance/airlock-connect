@@ -1,0 +1,12 @@
+# OS and Editor artifacts
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Build and local test artifacts
+*.log
+*.tmp
+tmp/

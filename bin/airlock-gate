@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# airlock-gate — Strict sudo security wrapper for standard UNIX pass
+# Intercepts plaintext secret decryption and requires sudo authentication
+# ==============================================================================
+
+set -o pipefail
+
+REAL_PASS="/usr/bin/pass"
+if [[ ! -x "$REAL_PASS" ]]; then
+    # Locate actual pass binary outside user bin wrapper
+    REAL_PASS=$(which -a pass 2>/dev/null | grep -v -E "airlock-gate|/bin/pass$" | head -n 1)
+fi
+
+if [[ -z "$REAL_PASS" || ! -x "$REAL_PASS" ]]; then
+    echo "[-] Error: Upstream 'pass' binary not found on this system." >&2
+    exit 1
+fi
+
+# Bypass check when invoked internally by airlock-connect launcher
+if [[ "$_PASS_INTERNAL_BYPASS" == "1" ]]; then
+    exec "$REAL_PASS" "$@"
+fi
+
+PREFIX="${PASSWORD_STORE_DIR:-$HOME/.password-store}"
+
+requires_sudo() {
+    if [[ $# -eq 0 ]]; then
+        return 1
+    fi
+
+    local cmd="$1"
+    case "$cmd" in
+        help|--help|-h|version|--version|init|ls|list|find|search|insert|add|generate|delete|rm|remove|rename|mv|copy|cp|git)
+            return 1
+            ;;
+        edit|grep)
+            return 0
+            ;;
+    esac
+
+    # Check if any target .gpg file is being decrypted (show, -c, --clip, or direct path)
+    local target=""
+    for arg in "$@"; do
+        case "$arg" in
+            show|-c|--clip|-q|--qrcode)
+                continue
+                ;;
+            -*)
+                continue
+                ;;
+            *)
+                target="$arg"
+                break
+                ;;
+        esac
+    done
+
+    if [[ -n "$target" && -f "$PREFIX/$target.gpg" ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+if requires_sudo "$@"; then
+    # Strict mode: Invalidate cached sudo credentials before prompting
+    sudo -k 2>/dev/null || true
+
+    if ! sudo -v -p "Enter sudo password to view/decrypt secret: "; then
+        echo "[-] Sudo authentication failed or cancelled." >&2
+        exit 1
+    fi
+
+    # Execute original pass binary
+    "$REAL_PASS" "$@"
+    RET=$?
+
+    # Strict mode: Flush sudo cache immediately after completion
+    sudo -k 2>/dev/null || true
+    exit $RET
+fi
+
+exec "$REAL_PASS" "$@"
