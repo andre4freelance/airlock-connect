@@ -85,7 +85,7 @@ select_entry() {
         rel="${file#$PREFIX/}"
         rel="${rel%.gpg}"
         entries+=("$rel")
-    done < <(find "$PREFIX" -type f -name "*.gpg" ! -path "*/.*" 2>/dev/null | sort)
+    done < <(find "$PREFIX" -type f -name "*.gpg" ! -path "$PREFIX/.*" 2>/dev/null | sort)
 
     if [[ ${#entries[@]} -eq 0 ]]; then
         echo "[-] No entries found in $PREFIX." >&2
@@ -97,10 +97,11 @@ select_entry() {
     if command -v fzf >/dev/null 2>&1 && [ -t 0 ]; then
         printf '%s\n' "${entries[@]}" | fzf --prompt="Select entry to connect > " --height=40% --reverse
     else
-        echo "[*] Available entries in vault:"
-        pass ls || true
-        echo
-        show_help
+        echo "[*] Available entries in vault:" >&2
+        pass ls >&2 || true
+        echo >&2
+        show_help >&2
+        exit 0
     fi
 }
 

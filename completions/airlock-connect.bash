@@ -17,7 +17,7 @@ _airlock_connect_complete() {
     fi
 
     # Read all .gpg files relative to password store
-    entries=$(find "$prefix" -type f -name "*.gpg" ! -path "*/.*" 2>/dev/null | sed -e "s|^$prefix/||" -e 's|\.gpg$||')
+    entries=$(find "$prefix" -type f -name "*.gpg" ! -path "$prefix/.*" 2>/dev/null | sed -e "s|^$prefix/||" -e 's|\.gpg$||')
     COMPREPLY=( $(compgen -W "$entries" -- "$cur") )
 }
 

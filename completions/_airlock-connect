@@ -5,7 +5,7 @@ _airlock_connect() {
     local prefix="${PASSWORD_STORE_DIR:-$HOME/.password-store}"
 
     if [[ -d "$prefix" ]]; then
-        entries=(${${(f)"$(find "$prefix" -type f -name '*.gpg' ! -path '*/.*' 2>/dev/null)"}#$prefix/})
+        entries=(${${(f)"$(find "$prefix" -type f -name '*.gpg' ! -path "$prefix/.*" 2>/dev/null)"}#$prefix/})
         entries=(${entries%.gpg})
     fi
 
