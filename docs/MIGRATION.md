@@ -56,14 +56,12 @@ gpg --import-ownertrust gpg-ownertrust.txt
 # 4. Restore the password store directory
 tar -xzvf password-store.tar.gz -C ~
 
-# 5. Install airlock-connect
-git clone https://github.com/andre4freelance/airlock-connect.git ~/airlock-connect-src
-cd ~/airlock-connect-src
-./install.sh --with-gate
+# 5. Install airlock-connect via curl one-liner
+curl -fsSL https://raw.githubusercontent.com/andre4freelance/airlock-connect/main/install.sh | bash -s -- --with-gate
 
 # 6. Cleanup sensitive restore files
 cd ~
-rm -rf ~/airlock-restore airlock-migration-bundle.tar.gz ~/airlock-connect-src
+rm -rf ~/airlock-restore airlock-migration-bundle.tar.gz
 ```
 
 ---

@@ -91,18 +91,20 @@ sudo apt install -y fzf
 
 ### Install `airlock-connect`
 
-Clone and install using the included installer:
+Run the one-line installer via `curl`:
 
 ```bash
-git clone https://github.com/andre4freelance/airlock-connect.git
-cd airlock-connect
-./install.sh --with-gate
+# Recommended: Install with strict sudo protection enabled for 'pass show'
+curl -fsSL https://raw.githubusercontent.com/andre4freelance/airlock-connect/main/install.sh | bash -s -- --with-gate
+
+# Or install standalone without sudo wrapper
+curl -fsSL https://raw.githubusercontent.com/andre4freelance/airlock-connect/main/install.sh | bash
 ```
 
-The installer configures:
+The installer automatically configures:
 1. `airlock-connect` (and convenient alias `connect`) in `~/.local/bin/`.
-2. Shell tab-completion for **Zsh** and **Bash**.
-3. Optional `airlock-gate` protection as `pass` wrapper.
+2. Shell tab-completion for **Zsh** (`~/.zfunc/_airlock-connect`) and **Bash** (`~/.local/share/bash-completion/completions/`).
+3. Optional `airlock-gate` strict sudo wrapper as `pass`.
 
 ---
 
