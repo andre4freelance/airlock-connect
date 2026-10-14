@@ -99,6 +99,10 @@ fi
 
 echo
 echo "Installation complete."
+echo "To refresh command paths in your current shell session, run:"
+echo "  rehash   # for Zsh"
+echo "  hash -r  # for Bash"
+echo
 echo "Ensure ${INSTALL_DIR} is in your PATH. If not already added:"
 echo '  export PATH="$HOME/.local/bin:$PATH"'
 echo
